@@ -1,130 +1,140 @@
 import os
 import psycopg2
 from dotenv import load_dotenv
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from datetime import datetime, timezone
 
-CREATE_ROOMS_TABLE = (
-    "CREATE TABLE IF NOT EXISTS rooms (id SERIAL PRIMARY KEY, name TEXT);"
-)
-CREATE_TEMPS_TABLE = """CREATE TABLE IF NOT EXISTS temperatures (room_id INTEGER, temperature REAL, 
-                        date TIMESTAMP, FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE);"""
+CREATE_BOOKS_TABLE = """CREATE TABLE IF NOT EXISTS books (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT,
+                        author TEXT);"""
 
-INSERT_ROOM_RETURN_ID = "INSERT INTO rooms (name) VALUES (%s) RETURNING id;"
-INSERT_TEMP = (
-    "INSERT INTO temperatures (room_id, temperature, date) VALUES (%s, %s, %s);"
-)
+SELECT_ALL_BOOKS = """SELECT * FROM books;"""
 
-GLOBAL_NUMBER_OF_DAYS = """SELECT AVG(temperature) as average FROM temperatures;"""
-GLOBAL_AVG = """SELECT AVG(temperature) as average FROM temperatures;"""
+SELECT_BOOK_BY_ID = """SELECT * FROM books WHERE id = %s;"""
+
+INSERT_BOOK = "INSERT INTO books (title, author) VALUES (%s, %s) RETURNING id;"
+
+DELETE_BOOK = """DELETE FROM books WHERE id = %s;"""
+
 
 load_dotenv()
 
 app = Flask(__name__)
+
 url = os.getenv("DATABASE_URL")
 
 
-@app.post("/api/room")
-def create_room():
+@app.route("/api/books", methods=["GET"])
+def getBooks():
+    connection = psycopg2.connect(url)
+
+    with connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SELECT_ALL_BOOKS)
+            books = cursor.fetchall()
+
+    connection.close()
+
+    books_list = []
+    for book in books:
+        book_dict = {"id": book[0], "title": book[1], "author": book[2]}
+        books_list.append(book_dict)
+
+    return jsonify(books_list), 200
+
+
+@app.route("/api/books/<int:book_id>", methods=["GET"])
+def getBookById(book_id):
+    connection = psycopg2.connect(url)
+
+    with connection:
+        with connection.cursor() as cursor:
+            cursor.execute(SELECT_BOOK_BY_ID, (book_id,))
+            book = cursor.fetchone()
+
+    connection.close()
+
+    if book is None:
+        return {"error": f"Livro com ID {book_id} não encontrado."}, 404
+
+    book_dict = {"id": book[0], "title": book[1], "author": book[2]}
+
+    return jsonify(book_dict)
+
+
+@app.route("/api/books", methods=["POST"])
+def addBook():
     data = request.get_json()
-    name = data["name"]
+
+    title = data["title"]
+    author = data["author"]
+
     connection = psycopg2.connect(url)
+
     with connection:
         with connection.cursor() as cursor:
-            cursor.execute(CREATE_ROOMS_TABLE)
-            cursor.execute(INSERT_ROOM_RETURN_ID, (name,))
-            room_id = cursor.fetchone()[0]
+            cursor.execute(CREATE_BOOKS_TABLE)
+            cursor.execute(INSERT_BOOK, (title, author))
+            id = cursor.fetchone()[0]
 
     connection.close()
 
-    return {"id": room_id, "message": f"Room {name} created."}, 201
+    return {"id": id, "message": f"Book {title} created."}, 201
 
 
-@app.post("/api/temperature")
-def add_temp():
+@app.route("/api/books/<int:book_id>", methods=["PUT"])
+def editBook(book_id):
     data = request.get_json()
-    temperature = data["temperature"]
-    room_id = data["room"]
-    try:
-        date = datetime.strptime(data["dae"], "%m-%d-%Y %H:%M:%S")
-    except KeyError:
-        date = datetime.now(timezone.utc)
+
+    title = data.get("title")
+    author = data.get("author")
+
+    if title is None and author is None:
+        return {"error": "Nenhum dado de livro fornecido para edição."}, 400
 
     connection = psycopg2.connect(url)
 
     with connection:
         with connection.cursor() as cursor:
-            cursor.execute(CREATE_TEMPS_TABLE)
-            cursor.execute(INSERT_TEMP, (room_id, temperature, date))
+            cursor.execute(SELECT_BOOK_BY_ID, (book_id,))
+
+            existing_book = cursor.fetchone()
+
+            if existing_book is None:
+                return {"error": f"Livro com ID {book_id} não encontrado."}, 404
+
+            if title:
+                cursor.execute(
+                    "UPDATE books SET title = %s WHERE id = %s;", (title, book_id)
+                )
+            if author is not None and title is not None:
+                cursor.execute(
+                    "UPDATE books SET title = %s, author = %s WHERE id = %s;",
+                    (title, author, book_id),
+                )
 
     connection.close()
 
-    return {"message": "Temperature added."}, 201
+    return {"message": f"Livro com ID {book_id} foi atualizado com sucesso."}
 
 
-@app.get("/api/average")
-def get_global_avg():
-
+@app.route("/api/books/<int:book_id>", methods=["DELETE"])
+def deleteBook(book_id):
     connection = psycopg2.connect(url)
 
     with connection:
         with connection.cursor() as cursor:
-            cursor.execute(GLOBAL_AVG)
-            average = cursor.fetchone()[0]
-            cursor.execute(GLOBAL_NUMBER_OF_DAYS)
-            days = cursor.fetchone()[0]
+            cursor.execute(DELETE_BOOK, (book_id,))
+
+            existing_book = cursor.fetchone()
+
+            if existing_book is None:
+                connection.close()
+                return {"error": f"Livro com ID {book_id} não encontrado."}, 404
+
+            cursor.execute(DELETE_BOOK, (book_id,))
 
     connection.close()
 
-    return {"average": round(average, 2), "days": days}
-
-
-# app = Flask(__name__)
-
-# books = [
-#     {"id": 1, "title": "Livro 1", "author": "author 1"},
-#     {"id": 2, "title": "Livro 2", "author": "author 2"},
-#     {"id": 3, "title": "Livro 3", "author": "Autor 3"},
-# ]
-
-
-# @app.route("/books", methods=["GET"])
-# def getBooks():
-#     return jsonify(books)
-
-
-# @app.route("/books/<int:id>", methods=["GET"])
-# def getBooksById(id):
-#     for book in books:
-#         if book.get("id") == id:
-#             return jsonify(book)
-
-#     abort(404)
-
-
-# @app.route("/books/<int:id>", methods=["PUT"])
-# def editBookById(id):
-#     book_edit = request.get_json()
-#     for index, book in enumerate(books):
-#         if book.get("id") == id:
-#             books[index].update(book_edit)
-#             return jsonify(books[index])
-
-
-# @app.route("/books", methods=["POST"])
-# def addBook():
-#     newBook = request.get_json()
-#     books.append(newBook)
-
-#     return jsonify(books)
-
-
-# @app.route("/books/<int:id>", methods=["DELETE"])
-# def removeBook(id):
-#     for index, book in enumerate(books):
-#         if book.get("id") == id:
-#             del books[index]
-#             return jsonify(books)
-
-
-# app.run(port=5000, host="localhost", debug=True)
+    return {"message": f"Livro com ID {book_id} foi excluído com sucesso."}
