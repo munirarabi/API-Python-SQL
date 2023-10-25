@@ -2,6 +2,7 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from datetime import datetime, timezone
 
 CREATE_BOOKS_TABLE = """CREATE TABLE IF NOT EXISTS books (
@@ -19,17 +20,29 @@ INSERT_BOOK = (
 
 DELETE_BOOK = """DELETE FROM books WHERE id = %s;"""
 
+DELETE_BOOKS = """DELETE FROM books WHERE id IN %s;"""
+
 UPDATE_BOOK = """UPDATE books SET title = %s, author = %s WHERE id = %s;"""
+
+CREATE_PROCEDURE_DELETE_ALL_BOOKS = """CREATE OR REPLACE FUNCTION spDeleteAllBooks()
+RETURNS void AS $$
+BEGIN
+    DELETE FROM books;
+END;
+$$ LANGUAGE plpgsql;
+"""
 
 
 load_dotenv()
 
 app = Flask(__name__)
 
+CORS(app)
+
 url = os.getenv("DATABASE_URL")
 
 
-def create_response(
+def dataResponse(
     data=None, status_error=False, messageError=None, message=None, status_code=500
 ):
     response = {"statusError": status_error}
@@ -62,11 +75,16 @@ def getBooks():
             book_dict = {"id": book[0], "title": book[1], "author": book[2]}
             books_list.append(book_dict)
 
-        return create_response(
-            data=books_list, message="Requisição OK", status_code=200
-        )
+        if not books_list:
+            return dataResponse(
+                data=0,
+                message="Nenhum livro cadastrado.",
+                status_code=200,
+            )
+
+        return dataResponse(data=books_list, message="Requisição OK", status_code=200)
     except Exception as e:
-        return create_response(status_error=True, messageError=e)
+        return dataResponse(status_error=True, messageError=e)
 
 
 @app.route("/api/books/<int:book_id>", methods=["GET"])
@@ -82,7 +100,7 @@ def getBookById(book_id):
         connection.close()
 
         if book is None:
-            return create_response(
+            return dataResponse(
                 status_error=True,
                 message=f"Livro com ID {book_id} não encontrado.",
                 status_code=404,
@@ -90,9 +108,9 @@ def getBookById(book_id):
 
         book_dict = {"id": book[0], "title": book[1], "author": book[2]}
 
-        return create_response(data=book_dict, message="Requisição OK", status_code=200)
+        return dataResponse(data=book_dict, message="Requisição OK", status_code=200)
     except Exception as e:
-        return create_response(status_error=True, messageError=e)
+        return dataResponse(status_error=True, messageError=e)
 
 
 @app.route("/api/books", methods=["POST"])
@@ -119,11 +137,11 @@ def addBook():
 
         bookInserted = {"id": id, "title": titleInserted, "author": authorInserted}
 
-        return create_response(
+        return dataResponse(
             data=bookInserted, message=f"Book {titleInserted} created.", status_code=201
         )
     except Exception as e:
-        return create_response(status_error=True, messageError=e)
+        return dataResponse(status_error=True, messageError=e)
 
 
 @app.route("/api/books/<int:book_id>", methods=["PUT"])
@@ -135,7 +153,7 @@ def editBook(book_id):
         author = data.get("author")
 
         if title is None or author is None:
-            return create_response(
+            return dataResponse(
                 status_error=True,
                 message="Forneça titulo e autor para edição.",
                 status_code=400,
@@ -150,7 +168,7 @@ def editBook(book_id):
                 existing_book = cursor.fetchone()
 
                 if existing_book is None:
-                    return create_response(
+                    return dataResponse(
                         status_error=True,
                         message=f"Livro com ID {book_id} não encontrado.",
                         status_code=404,
@@ -164,12 +182,12 @@ def editBook(book_id):
 
         connection.close()
 
-        return create_response(
+        return dataResponse(
             message=f"Livro com ID {book_id} foi atualizado com sucesso.",
             status_code=200,
         )
     except Exception as e:
-        return create_response(status_error=True, messageError=e)
+        return dataResponse(status_error=True, messageError=e)
 
 
 @app.route("/api/books/<int:book_id>", methods=["DELETE"])
@@ -184,9 +202,7 @@ def deleteBook(book_id):
                 existing_book = cursor.fetchone()
 
                 if existing_book is None:
-                    connection.close()
-
-                    return create_response(
+                    return dataResponse(
                         status_error=True,
                         message=f"Livro com ID {book_id} não encontrado.",
                         status_code=404,
@@ -196,8 +212,63 @@ def deleteBook(book_id):
 
         connection.close()
 
-        return create_response(
+        return dataResponse(
             message=f"Livro com ID {book_id} foi excluído com sucesso.", status_code=200
         )
     except Exception as e:
-        return create_response(status_error=True, messageError=e)
+        return dataResponse(status_error=True, messageError=e)
+
+
+@app.route("/api/books/delete", methods=["DELETE"])
+def deleteBooks():
+    try:
+        data = request.get_json()
+
+        if "book_ids" not in data:
+            return dataResponse(
+                status_error=True,
+                message="Os IDs dos livros a serem excluídos devem ser fornecidos.",
+                status_code=400,
+            )
+
+        book_ids = data["book_ids"]
+
+        if not book_ids:
+            return dataResponse(
+                status_error=True,
+                message="A lista de IDs de livros a serem excluídos está vazia.",
+                status_code=400,
+            )
+
+        connection = psycopg2.connect(url)
+
+        with connection:
+            with connection.cursor() as cursor:
+                cursor.execute(DELETE_BOOKS, (tuple(book_ids),))
+
+        connection.close()
+
+        return dataResponse(
+            message=f"{len(book_ids)} livros foram excluídos com sucesso.",
+            status_code=200,
+        )
+    except Exception as e:
+        return dataResponse(status_error=True, messageError=e)
+
+
+@app.route("/api/books/delete-all-books", methods=["DELETE"])
+def deleteAllBooks():
+    try:
+        connection = psycopg2.connect(url)
+
+        with connection:
+            with connection.cursor() as cursor:
+                cursor.callproc("spDeleteAllBooks")
+
+        connection.close()
+
+        return dataResponse(
+            message="Todos os livros foram excluídos com sucesso.", status_code=200
+        )
+    except Exception as e:
+        return dataResponse(status_error=True, messageError=e)
