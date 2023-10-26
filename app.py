@@ -32,7 +32,6 @@ END;
 $$ LANGUAGE plpgsql;
 """
 
-
 load_dotenv()
 
 app = Flask(__name__)
