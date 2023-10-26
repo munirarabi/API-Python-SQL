@@ -42,9 +42,9 @@ url = os.getenv("DATABASE_URL")
 
 
 def dataResponse(
-    data=None, status_error=False, messageError=None, message=None, status_code=500
+    data=None, statusError=False, messageError=None, message=None, statusCode=500
 ):
-    response = {"statusError": status_error}
+    response = {"statusError": statusError}
 
     if data:
         response["data"] = data
@@ -55,7 +55,7 @@ def dataResponse(
     if message:
         response["message"] = message
 
-    return jsonify(response), status_code
+    return jsonify(response), statusCode
 
 
 @app.route("/api/books", methods=["GET"])
@@ -78,12 +78,12 @@ def getBooks():
             return dataResponse(
                 data=0,
                 message="Nenhum livro cadastrado.",
-                status_code=200,
+                statusCode=200,
             )
 
-        return dataResponse(data=books_list, message="Requisição OK", status_code=200)
+        return dataResponse(data=books_list, message="Requisição OK", statusCode=200)
     except Exception as e:
-        return dataResponse(status_error=True, messageError=e)
+        return dataResponse(statusError=True, messageError=e)
 
 
 @app.route("/api/books/<int:book_id>", methods=["GET"])
@@ -100,16 +100,16 @@ def getBookById(book_id):
 
         if book is None:
             return dataResponse(
-                status_error=True,
+                statusError=True,
                 message=f"Livro com ID {book_id} não encontrado.",
-                status_code=404,
+                statusCode=404,
             )
 
         book_dict = {"id": book[0], "title": book[1], "author": book[2]}
 
-        return dataResponse(data=book_dict, message="Requisição OK", status_code=200)
+        return dataResponse(data=book_dict, message="Requisição OK", statusCode=200)
     except Exception as e:
-        return dataResponse(status_error=True, messageError=e)
+        return dataResponse(statusError=True, messageError=e)
 
 
 @app.route("/api/books", methods=["POST"])
@@ -137,10 +137,10 @@ def addBook():
         bookInserted = {"id": id, "title": titleInserted, "author": authorInserted}
 
         return dataResponse(
-            data=bookInserted, message=f"Book {titleInserted} created.", status_code=201
+            data=bookInserted, message=f"Book {titleInserted} created.", statusCode=201
         )
     except Exception as e:
-        return dataResponse(status_error=True, messageError=e)
+        return dataResponse(statusError=True, messageError=e)
 
 
 @app.route("/api/books/<int:book_id>", methods=["PUT"])
@@ -153,9 +153,9 @@ def editBook(book_id):
 
         if title is None or author is None:
             return dataResponse(
-                status_error=True,
+                statusError=True,
                 message="Forneça titulo e autor para edição.",
-                status_code=400,
+                statusCode=400,
             )
 
         connection = psycopg2.connect(url)
@@ -168,9 +168,9 @@ def editBook(book_id):
 
                 if existing_book is None:
                     return dataResponse(
-                        status_error=True,
+                        statusError=True,
                         message=f"Livro com ID {book_id} não encontrado.",
-                        status_code=404,
+                        statusCode=404,
                     )
 
                 if author is not None and title is not None:
@@ -183,10 +183,10 @@ def editBook(book_id):
 
         return dataResponse(
             message=f"Livro com ID {book_id} foi atualizado com sucesso.",
-            status_code=200,
+            statusCode=200,
         )
     except Exception as e:
-        return dataResponse(status_error=True, messageError=e)
+        return dataResponse(statusError=True, messageError=e)
 
 
 @app.route("/api/books/<int:book_id>", methods=["DELETE"])
@@ -202,9 +202,9 @@ def deleteBook(book_id):
 
                 if existing_book is None:
                     return dataResponse(
-                        status_error=True,
+                        statusError=True,
                         message=f"Livro com ID {book_id} não encontrado.",
-                        status_code=404,
+                        statusCode=404,
                     )
 
                 cursor.execute(DELETE_BOOK, (book_id,))
@@ -212,10 +212,10 @@ def deleteBook(book_id):
         connection.close()
 
         return dataResponse(
-            message=f"Livro com ID {book_id} foi excluído com sucesso.", status_code=200
+            message=f"Livro com ID {book_id} foi excluído com sucesso.", statusCode=200
         )
     except Exception as e:
-        return dataResponse(status_error=True, messageError=e)
+        return dataResponse(statusError=True, messageError=e)
 
 
 @app.route("/api/books/delete", methods=["DELETE"])
@@ -225,18 +225,18 @@ def deleteBooks():
 
         if "book_ids" not in data:
             return dataResponse(
-                status_error=True,
+                statusError=True,
                 message="Os IDs dos livros a serem excluídos devem ser fornecidos.",
-                status_code=400,
+                statusCode=400,
             )
 
         book_ids = data["book_ids"]
 
         if not book_ids:
             return dataResponse(
-                status_error=True,
+                statusError=True,
                 message="A lista de IDs de livros a serem excluídos está vazia.",
-                status_code=400,
+                statusCode=400,
             )
 
         connection = psycopg2.connect(url)
@@ -249,10 +249,10 @@ def deleteBooks():
 
         return dataResponse(
             message=f"{len(book_ids)} livros foram excluídos com sucesso.",
-            status_code=200,
+            statusCode=200,
         )
     except Exception as e:
-        return dataResponse(status_error=True, messageError=e)
+        return dataResponse(statusError=True, messageError=e)
 
 
 @app.route("/api/books/delete-all-books", methods=["DELETE"])
@@ -267,7 +267,7 @@ def deleteAllBooks():
         connection.close()
 
         return dataResponse(
-            message="Todos os livros foram excluídos com sucesso.", status_code=200
+            message="Todos os livros foram excluídos com sucesso.", statusCode=200
         )
     except Exception as e:
-        return dataResponse(status_error=True, messageError=e)
+        return dataResponse(statusError=True, messageError=e)
